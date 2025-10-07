@@ -1,0 +1,5 @@
+name,unit,category,brand,stock,status,image
+Coke,bottle,Beverages,Coca-Cola,15,In Stock,https://images.unsplash.com/photo-1542736667-069246bdbc74?w=256&q=60
+Sprite,bottle,Beverages,Coca-Cola,0,Out of Stock,"Out of Stock,https://via.placeholder.com/80"
+Amul Milk,1 liter,Dairy,Amul,14,In Stock,https://images.unsplash.com/photo-1600289031512-2a4e55c40c7f?w=256&q=60 
+Cheddar Cheese,200g,Dairy,Amul,1,In Stock,https://images.unsplash.com/photo-1600289031512-2a4e55c40c7f?w=256&q=60 

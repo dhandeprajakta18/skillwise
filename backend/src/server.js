@@ -7,7 +7,7 @@ import productsRouter from "./routes/products.js";
 const app = express();
 
 app.use(cors({
-  origin: (process.env.FRONTEND_ORIGIN?.split(",") || true),
+  origin: (origin, cb) => cb(null, true), // DEV: allow all
   methods: ["GET","POST","PUT","PATCH","DELETE","OPTIONS"],
   allowedHeaders: ["Content-Type","Authorization","x-user-id","x-user-name"],
   credentials: true,

@@ -3,10 +3,11 @@
 import { useMemo, useRef, useState } from "react";
 import axios from "axios";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Upload, Download, Search as SearchIcon, Edit3, Trash2, X } from "lucide-react";
+import { Plus, Upload, Download, Search as SearchIcon, Edit3, Trash2, X, History } from "lucide-react";
 
 const API = (process.env.NEXT_PUBLIC_API_BASE || "").replace(/\/$/, "");
 
+// -------- Types --------
 type Product = {
   _id: string;
   name: string;
@@ -17,8 +18,7 @@ type Product = {
   status: "In Stock" | "Out of Stock";
   image: string;
 };
-
-type History = {
+type HistoryItem = {
   _id: string;
   oldQuantity: number;
   newQuantity: number;
@@ -26,7 +26,14 @@ type History = {
   user?: { id?: string; name?: string };
 };
 
-/* ---------------- Add Product Modal ---------------- */
+// -------- Helpers --------
+const safeImage = (url?: string) => {
+  const u = (url || "").trim();
+  if (!u) return "";
+  return /^https?:\/\//i.test(u) ? u : "";
+};
+
+// -------- Add Modal --------
 function AddProductModal({
   open,
   onClose,
@@ -44,6 +51,7 @@ function AddProductModal({
     stock: 0,
     image: "",
   });
+
   const canSave = (form.name || "").trim().length > 0;
 
   if (!open) return null;
@@ -56,6 +64,7 @@ function AddProductModal({
         <button className="absolute right-3 top-3 text-gray-500 hover:text-gray-800" onClick={onClose}>
           <X className="w-5 h-5" />
         </button>
+
         <h3 className="text-2xl font-bold mb-6 text-indigo-600">➕ Add New Product</h3>
 
         <div className="grid grid-cols-2 gap-4">
@@ -66,16 +75,12 @@ function AddProductModal({
             onChange={(e) => setForm({ ...form, name: e.target.value })}
           />
           <input className="input" placeholder="Unit" value={form.unit || ""} onChange={(e) => setForm({ ...form, unit: e.target.value })} />
-          <input
-            className="input"
-            placeholder="Category"
-            value={form.category || ""}
-            onChange={(e) => setForm({ ...form, category: e.target.value })}
-          />
+          <input className="input" placeholder="Category" value={form.category || ""} onChange={(e) => setForm({ ...form, category: e.target.value })} />
           <input className="input" placeholder="Brand" value={form.brand || ""} onChange={(e) => setForm({ ...form, brand: e.target.value })} />
           <input
             className="input"
             type="number"
+            min={0}
             placeholder="Stock"
             value={form.stock ?? 0}
             onChange={(e) => setForm({ ...form, stock: Number(e.target.value || 0) })}
@@ -97,7 +102,7 @@ function AddProductModal({
             disabled={!canSave}
             onClick={() =>
               onCreate({
-                name: form.name!.trim(),
+                name: (form.name || "").trim(),
                 unit: (form.unit || "pcs").trim(),
                 category: (form.category || "").trim(),
                 brand: (form.brand || "").trim(),
@@ -114,7 +119,103 @@ function AddProductModal({
   );
 }
 
-/* ---------------- Main Page ---------------- */
+// -------- Mobile Card (responsive) --------
+function ProductCard({
+  p,
+  isEditing,
+  editing,
+  onChange,
+  onEdit,
+  onSave,
+  onCancel,
+  onDelete,
+  onHistory,
+}: {
+  p: Product;
+  isEditing: boolean;
+  editing: Partial<Product>;
+  onChange: (patch: Partial<Product>) => void;
+  onEdit: () => void;
+  onSave: () => void;
+  onCancel: () => void;
+  onDelete: () => void;
+  onHistory: () => void;
+}) {
+  const img = safeImage(p.image);
+  return (
+    <div className="md:hidden rounded-xl border bg-white shadow-sm p-4 space-y-3">
+      <div className="flex items-start gap-3">
+        <div className="h-16 w-16 rounded-xl border bg-gray-50 overflow-hidden flex items-center justify-center">
+          {img ? (
+            <img
+              src={img}
+              alt={p.name}
+              className="h-full w-full object-cover"
+              onError={(e) => ((e.currentTarget as HTMLImageElement).style.display = "none")}
+            />
+          ) : (
+            <span className="text-[10px] text-gray-400">No img</span>
+          )}
+        </div>
+        <div className="flex-1">
+          {isEditing ? (
+            <input className="input w-full mb-1" value={editing.name ?? ""} onChange={(e) => onChange({ name: e.target.value })} />
+          ) : (
+            <div className="font-semibold">{p.name}</div>
+          )}
+          <div className="text-xs text-gray-500">{p.brand} • {p.category}</div>
+          <div className="text-xs text-gray-500">Unit: {isEditing ? (
+            <input className="input w-24 inline-block ml-1" value={editing.unit ?? ""} onChange={(e) => onChange({ unit: e.target.value })} />
+          ) : p.unit}</div>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="text-sm">Stock: {isEditing ? (
+            <input type="number" className="input w-24 inline-block ml-1" value={editing.stock ?? 0} onChange={(e) => onChange({ stock: Number(e.target.value) })} />
+          ) : p.stock}</div>
+          <div className="mt-1">
+            {p.status === "In Stock" ? (
+              <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded-full text-xs inline-flex items-center gap-1">
+                <span className="h-2 w-2 bg-green-600 rounded-full" />
+                In Stock
+              </span>
+            ) : (
+              <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded-full text-xs inline-flex items-center gap-1">
+                <span className="h-2 w-2 bg-red-600 rounded-full" />
+                Out of Stock
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="flex gap-2">
+          {isEditing ? (
+            <>
+              <button onClick={onSave} className="bg-indigo-500 text-white px-3 py-1 rounded-md">Save</button>
+              <button onClick={onCancel} className="bg-gray-400 text-white px-3 py-1 rounded-md">Cancel</button>
+            </>
+          ) : (
+            <>
+              <button onClick={onEdit} className="btn-dark flex items-center gap-1 px-3 py-1">
+                <Edit3 className="w-4 h-4" /> Edit
+              </button>
+              <button onClick={onDelete} className="bg-red-500 text-white px-3 py-1 rounded-md flex items-center gap-1">
+                <Trash2 className="w-4 h-4" /> Del
+              </button>
+              <button onClick={onHistory} className="bg-emerald-500 text-white px-3 py-1 rounded-md flex items-center gap-1">
+                <History className="w-4 h-4" /> Log
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// -------- Main --------
 export default function ProductsPage() {
   const qc = useQueryClient();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -126,33 +227,44 @@ export default function ProductsPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editing, setEditing] = useState<Partial<Product>>({});
-  const [selected, setSelected] = useState<Product | null>(null); // for history sidebar
+  const [selected, setSelected] = useState<Product | null>(null);
 
   const [page, setPage] = useState(1);
   const [limit] = useState(10);
 
-  /* --------- Queries --------- */
+  // ----- Queries -----
   const productsQ = useQuery({
     queryKey: ["products", { search, category, page, limit }],
     queryFn: async () => {
       const { data } = await axios.get(`${API}/products`, { params: { name: search, category, page, limit } });
-      return data as { items: Product[]; total: number; page: number; limit: number };
+      if (Array.isArray(data)) {
+        return { items: data as Product[], total: (data as Product[]).length, page: 1, limit: (data as Product[]).length || 10 };
+      }
+      return {
+        items: Array.isArray(data.items) ? (data.items as Product[]) : [],
+        total: data.total ?? 0,
+        page: data.page ?? 1,
+        limit: data.limit ?? 10,
+      };
     },
     keepPreviousData: true,
   });
 
   const categoriesQ = useQuery({
     queryKey: ["categories"],
-    queryFn: async () => (await axios.get(`${API}/products/categories`)).data as string[],
+    queryFn: async () => {
+      const { data } = await axios.get(`${API}/products/categories`);
+      return Array.isArray(data) ? (data as string[]) : (data?.categories ?? []);
+    },
   });
 
   const historyQ = useQuery({
     queryKey: ["history", selected?._id],
     enabled: !!selected?._id,
-    queryFn: async () => (await axios.get(`${API}/products/${selected!._id}/history`)).data as History[],
+    queryFn: async () => (await axios.get(`${API}/products/${selected!._id}/history`)).data as HistoryItem[],
   });
 
-  /* --------- Mutations --------- */
+  // ----- Mutations -----
   const createMut = useMutation({
     mutationFn: async (body: Partial<Product>) => (await axios.post(`${API}/products`, body)).data,
     onSuccess: () => qc.invalidateQueries({ queryKey: ["products"] }),
@@ -161,7 +273,6 @@ export default function ProductsPage() {
   const updateMut = useMutation({
     mutationFn: async (input: Partial<Product> & { _id: string }) => {
       const { _id, ...body } = input;
-      // send user headers so backend can store who changed stock
       const { data } = await axios.put(`${API}/products/${_id}`, body, {
         headers: { "x-user-id": "demo", "x-user-name": "Prajakta" },
       });
@@ -189,7 +300,7 @@ export default function ProductsPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["products"] }),
   });
 
-  /* --------- Handlers --------- */
+  // ----- Handlers -----
   const exportCsv = () => window.open(`${API}/products/export`, "_blank");
 
   const addNew = async (body: Partial<Product>) => {
@@ -229,24 +340,16 @@ export default function ProductsPage() {
     return Math.max(1, Math.ceil(productsQ.data.total / productsQ.data.limit));
   }, [productsQ.data]);
 
-  const safeImage = (url?: string) => {
-    const u = (url || "").trim();
-    if (!u) return "";
-    // only allow http/https full urls to avoid Next/Image domain config issues
-    return /^https?:\/\//i.test(u) ? u : "";
-  };
-
-  /* --------- UI --------- */
+  // ----- UI -----
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-indigo-50 p-10">
-      <div className="max-w-7xl mx-auto space-y-8">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-indigo-50 p-4 md:p-10">
+      <div className="max-w-7xl mx-auto space-y-6 md:space-y-8">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <h1 className="text-4xl font-extrabold bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 bg-clip-text text-transparent">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+          <h1 className="text-3xl md:text-4xl font-extrabold bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 bg-clip-text text-transparent">
             📦 Products
           </h1>
-          <div className="flex gap-3">
-            {/* hidden file input */}
+          <div className="flex flex-wrap gap-2 md:gap-3">
             <input
               ref={fileRef}
               type="file"
@@ -255,16 +358,16 @@ export default function ProductsPage() {
               onChange={(e) => setFile(e.target.files?.[0] || null)}
             />
             <button onClick={chooseFile} className="btn-muted flex items-center gap-2">
-              <Upload className="w-4 h-4" /> Import
+              <Upload className="w-4 h-4" /> Choose CSV
             </button>
             <button onClick={doImport} disabled={!file || importMut.isPending} className="btn-muted disabled:opacity-50">
-              {importMut.isPending ? "Uploading…" : "Upload"}
+              {importMut.isPending ? "Uploading…" : "Import"}
             </button>
             <button
               onClick={exportCsv}
-              className="bg-gradient-to-r from-green-500 to-emerald-600 text-white px-4 py-2 rounded-lg shadow hover:opacity-90"
+              className="bg-gradient-to-r from-green-500 to-emerald-600 text-white px-4 py-2 rounded-lg shadow hover:opacity-90 flex items-center gap-2"
             >
-              <Download className="w-4 h-4 inline-block mr-1" />
+              <Download className="w-4 h-4" />
               Export
             </button>
             <button
@@ -277,8 +380,8 @@ export default function ProductsPage() {
         </div>
 
         {/* Filters */}
-        <div className="bg-white/70 backdrop-blur-lg p-4 rounded-2xl shadow flex items-center gap-4">
-          <div className="flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-2 w-80">
+        <div className="bg-white/70 backdrop-blur-lg p-3 md:p-4 rounded-2xl shadow flex flex-col md:flex-row items-stretch md:items-center gap-3">
+          <div className="flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-2 w-full md:w-80">
             <SearchIcon className="w-4 h-4 text-gray-400" />
             <input
               value={search}
@@ -296,10 +399,10 @@ export default function ProductsPage() {
               setCategory(e.target.value);
               setPage(1);
             }}
-            className="border rounded-lg px-3 py-2 shadow-sm"
+            className="border rounded-lg px-3 py-2 shadow-sm w-full md:w-auto"
           >
             <option value="">All categories</option>
-            {categoriesQ.data?.map((c) => (
+            {(categoriesQ.data ?? []).map((c) => (
               <option key={c} value={c}>
                 {c}
               </option>
@@ -307,8 +410,34 @@ export default function ProductsPage() {
           </select>
         </div>
 
-        {/* Products Table (with horizontal scroll) */}
-        <div className="bg-white/90 backdrop-blur-xl rounded-2xl shadow-xl overflow-x-auto">
+        {/* Mobile cards */}
+        <div className="grid gap-3 md:hidden">
+          {(productsQ.data?.items ?? []).map((p) => {
+            const isEditing = editingId === p._id;
+            return (
+              <ProductCard
+                key={p._id}
+                p={p}
+                isEditing={isEditing}
+                editing={isEditing ? editing : {}}
+                onChange={(patch) => setEditing((s) => ({ ...s, ...patch }))}
+                onEdit={() => {
+                  setEditingId(p._id);
+                  setEditing(p);
+                }}
+                onSave={saveEdit}
+                onCancel={() => setEditingId(null)}
+                onDelete={() => {
+                  if (confirm("Delete this product?")) deleteMut.mutate(p._id);
+                }}
+                onHistory={() => setSelected(p)}
+              />
+            );
+          })}
+        </div>
+
+        {/* Desktop table (with horizontal scroll) */}
+        <div className="hidden md:block bg-white/90 backdrop-blur-xl rounded-2xl shadow-xl overflow-x-auto">
           <table className="text-sm min-w-[1100px] w-full">
             <thead className="bg-indigo-50">
               <tr>
@@ -320,7 +449,7 @@ export default function ProductsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {productsQ.data?.items.map((p) => {
+              {(productsQ.data?.items ?? []).map((p) => {
                 const isEditing = editingId === p._id;
                 const img = safeImage(p.image);
 
@@ -336,27 +465,22 @@ export default function ProductsPage() {
                           onError={(e) => {
                             (e.currentTarget as HTMLImageElement).style.display = "none";
                             const ph = document.createElement("div");
-                            ph.className =
-                              "h-12 w-12 flex items-center justify-center rounded-xl border bg-gray-100 text-[10px] text-gray-400";
+                            ph.className = "h-12 w-12 grid place-items-center rounded-xl border bg-gray-100 text-[10px] text-gray-400";
                             ph.textContent = "No img";
                             e.currentTarget.parentElement?.appendChild(ph);
                           }}
                         />
                       ) : (
-                        <div className="h-12 w-12 flex items-center justify-center rounded-xl border bg-gray-100 text-xs text-gray-400">
+                        <div className="h-12 w-12 grid place-items-center rounded-xl border bg-gray-100 text-[10px] text-gray-400">
                           No img
                         </div>
                       )}
                     </td>
 
-                    {/* Name (clickable to open history when not editing) */}
+                    {/* Name (history on click) */}
                     <td className="px-6 py-3">
                       {isEditing ? (
-                        <input
-                          className="input w-40"
-                          value={editing.name ?? ""}
-                          onChange={(e) => setEditing((s) => ({ ...s, name: e.target.value }))}
-                        />
+                        <input className="input w-40" value={editing.name ?? ""} onChange={(e) => setEditing((s) => ({ ...s, name: e.target.value }))} />
                       ) : (
                         <button className="text-indigo-600 hover:underline" onClick={() => setSelected(p)} title="View history">
                           {p.name}
@@ -367,11 +491,7 @@ export default function ProductsPage() {
                     {/* Unit */}
                     <td className="px-6 py-3">
                       {isEditing ? (
-                        <input
-                          className="input w-24"
-                          value={editing.unit ?? ""}
-                          onChange={(e) => setEditing((s) => ({ ...s, unit: e.target.value }))}
-                        />
+                        <input className="input w-24" value={editing.unit ?? ""} onChange={(e) => setEditing((s) => ({ ...s, unit: e.target.value }))} />
                       ) : (
                         p.unit
                       )}
@@ -380,11 +500,7 @@ export default function ProductsPage() {
                     {/* Category */}
                     <td className="px-6 py-3">
                       {isEditing ? (
-                        <input
-                          className="input w-32"
-                          value={editing.category ?? ""}
-                          onChange={(e) => setEditing((s) => ({ ...s, category: e.target.value }))}
-                        />
+                        <input className="input w-32" value={editing.category ?? ""} onChange={(e) => setEditing((s) => ({ ...s, category: e.target.value }))} />
                       ) : (
                         p.category
                       )}
@@ -393,11 +509,7 @@ export default function ProductsPage() {
                     {/* Brand */}
                     <td className="px-6 py-3">
                       {isEditing ? (
-                        <input
-                          className="input w-32"
-                          value={editing.brand ?? ""}
-                          onChange={(e) => setEditing((s) => ({ ...s, brand: e.target.value }))}
-                        />
+                        <input className="input w-32" value={editing.brand ?? ""} onChange={(e) => setEditing((s) => ({ ...s, brand: e.target.value }))} />
                       ) : (
                         p.brand
                       )}
@@ -421,12 +533,12 @@ export default function ProductsPage() {
                     <td className="px-6 py-3 whitespace-nowrap">
                       {p.status === "In Stock" ? (
                         <span className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-medium inline-flex items-center gap-2">
-                          <span className="h-2 w-2 bg-green-600 rounded-full animate-pulse" />
+                          <span className="h-2 w-2 bg-green-600 rounded-full" />
                           In Stock
                         </span>
                       ) : (
                         <span className="bg-red-100 text-red-700 px-3 py-1 rounded-full text-xs font-medium inline-flex items-center gap-2">
-                          <span className="h-2 w-2 bg-red-600 rounded-full animate-pulse" />
+                          <span className="h-2 w-2 bg-red-600 rounded-full" />
                           Out of Stock
                         </span>
                       )}
@@ -445,10 +557,7 @@ export default function ProductsPage() {
                         </div>
                       ) : (
                         <div className="flex gap-2">
-                          <button
-                            onClick={() => startEdit(p)}
-                            className="bg-indigo-500 text-white px-3 py-1 rounded-md hover:bg-indigo-600 flex items-center gap-1"
-                          >
+                          <button onClick={() => startEdit(p)} className="bg-indigo-500 text-white px-3 py-1 rounded-md hover:bg-indigo-600 flex items-center gap-1">
                             <Edit3 className="w-4 h-4" /> Edit
                           </button>
                           <button
@@ -515,11 +624,7 @@ export default function ProductsPage() {
             <span>
               Page {page} / {totalPages}
             </span>
-            <button
-              className="px-3 py-1 rounded-lg bg-gray-100 hover:bg-gray-200"
-              disabled={page >= totalPages}
-              onClick={() => setPage(page + 1)}
-            >
+            <button className="px-3 py-1 rounded-lg bg-gray-100 hover:bg-gray-200" disabled={page >= totalPages} onClick={() => setPage(page + 1)}>
               Next
             </button>
           </div>
